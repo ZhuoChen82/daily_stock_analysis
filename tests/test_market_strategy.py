@@ -59,6 +59,26 @@ class TestMarketAnalyzerStrategyPrompt(unittest.TestCase):
         self.assertNotIn("Strategy Blueprint", prompt)
         self.assertIn("风险偏好", prompt)
 
+    def test_jp_kr_prompt_uses_region_aware_chinese_shell(self):
+        cases = [
+            ("jp", "日本市场", "日本市场三段式复盘策略"),
+            ("kr", "韩国市场", "韩国市场三段式复盘策略"),
+        ]
+
+        for region, market_scope_name, strategy_title in cases:
+            with self.subTest(region=region), patch(
+                "src.market_analyzer.get_config",
+                return_value=SimpleNamespace(report_language="zh"),
+            ):
+                analyzer = MarketAnalyzer(region=region)
+                prompt = analyzer._build_review_prompt(MarketOverview(date="2026-02-24"), [])
+
+            self.assertIn(f"专业的{market_scope_name}分析师", prompt)
+            self.assertIn(f"结构化的{market_scope_name}大盘复盘报告", prompt)
+            self.assertIn(f"## 2026-02-24 {market_scope_name}大盘复盘", prompt)
+            self.assertIn(strategy_title, prompt)
+            self.assertNotIn("A/H/美股市场分析师", prompt)
+
     def test_cn_prompt_uses_english_shell_when_report_language_is_en(self):
         with patch("src.market_analyzer.get_config", return_value=SimpleNamespace(report_language="en")):
             analyzer = MarketAnalyzer(region="cn")

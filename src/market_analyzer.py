@@ -1382,8 +1382,13 @@ Concept lagging: {bottom_concepts_text if bottom_concepts_text else "N/A"}"""
 Output the report content directly, no extra commentary.
 """
 
-        # A 股场景使用中文提示语
-        return f"""你是一位专业的A/H/美股市场分析师，请根据以下数据生成一份结构化的{self._get_market_scope_name('zh')}大盘复盘报告。
+        # 中文提示语按 region 保持市场边界，避免 JP/KR 复盘继承 A/H/美股语境。
+        zh_market_scope_name = self._get_market_scope_name("zh")
+        zh_report_title = f"{overview.date} 大盘复盘"
+        if self.region in ("jp", "kr"):
+            zh_report_title = f"{overview.date} {zh_market_scope_name}大盘复盘"
+
+        return f"""你是一位专业的{zh_market_scope_name}分析师，请根据以下数据生成一份结构化的{zh_market_scope_name}大盘复盘报告。
 
 【重要】输出要求：
 - 必须输出纯 Markdown 文本格式
@@ -1418,7 +1423,7 @@ Output the report content directly, no extra commentary.
 
 # 输出格式模板（请严格按此格式输出）
 
-## {overview.date} 大盘复盘
+## {zh_report_title}
 
 > 一句话给出今日市场状态、核心矛盾和明日优先观察方向。
 
