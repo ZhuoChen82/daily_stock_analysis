@@ -21,13 +21,17 @@
 
 兼容性与回退说明（针对结构化检测命中项）：
 
-- `#1815` 本次仅新增 `yfinance` 报价/基本面上下文中的可选字段元数据（`market`、`currency`、`data_quality`、`missing_fields`、`provider`），不改动 LLM `provider`、`model`、`base_url`、配置 Schema、运行时迁移分支、数据库 schema 与消息协议版本；外部 provider/API 仍沿用既有链路与 fallback。
-- 兼容/回退证据：
-  - 官方约定参考：[LiteLLM OpenAI-compatible](https://docs.litellm.ai/docs/providers/openai_compatible)、[OpenAI Chat Completion API](https://platform.openai.com/docs/api-reference/chat)；
-  - 运行时配置不清空路径：`tests/test_system_config_service.py::test_runtime_env_fallback_does_not_persist_llm_fields_on_save`、`tests/test_system_config_service.py::test_runtime_env_fallback_does_not_override_saved_provider_and_base_url_settings`、`tests/test_system_config_service.py::test_import_desktop_env_merges_keys_without_deleting_unspecified_values`、`tests/test_config_env_compat.py`；
-  - 清理行为与可见提示：`tests/test_system_config_service.py::test_update_alphasift_enable_does_not_rewrite_llm_fields`、`tests/test_system_config_service.py::test_update_preserves_masked_secret`；
-  - 实际回退路径：恢复 `.env` 备份中的 provider/model/base_url 值，或回退提交。
-- 运行时配置语义说明：`MARKET_REVIEW_REGION`、`MARKET_REVIEW_COLOR_SCHEME` 与 Web 市场选择入口只影响大盘复盘输入/展示；不触发 provider/model/base_url 重写、运行时配置清理、路由迁移分支。
+- `#1815` 本次仅新增 `yfinance` 报价/基本面上下文中的可选字段元数据（如 `market`、`currency`、`data_quality`、`missing_fields`、`provider`），未改动 LLM provider/model/base URL、配置 Schema、运行时环境变量、数据库字段、存量缓存序列化或消息协议版本。
+- 与本条 PR 相关的配置语义上，未新增或替换 provider、model、base URL，未新增配置清理/迁移分支；已保存配置仍保持原样，回退方式为回退该提交。
+- 外部 API 边界仍仅限既有 `yfinance` fetch 路径（含 `Ticker`/`history`/`fast_info`）与既有兜底逻辑；没有新增或迁移 API 网关/host，`YFINANCE_PRIORITY` 是唯一受影响的可见参数。JP/KR 主指数与 Yahoo symbol 对应如下（可核验）：
+  - 日经225：`^N225`（<https://finance.yahoo.com/quote/%5EN225/>）
+  - 东证指数：`^TOPX`（<https://finance.yahoo.com/quote/%5ETOPX/>）
+  - KOSPI：`^KS11`（<https://finance.yahoo.com/quote/%5EKS11/>）
+  - KOSDAQ：`^KQ11`（<https://finance.yahoo.com/quote/%5EKQ11/>）
+  - 依赖版本：`requirements.txt` 中 `yfinance>=0.2.0`，回归覆盖路径见 `tests/test_yfinance_jp_kr_indices.py` 与 `tests/test_yfinance_hk_indices.py`。
+- 兼容性与回退：`MARKET_REVIEW_REGION` 会保留合法逗号子集（如 `cn,us`）并保持 `both` 全量行为，非法值或空值回退到 `cn`，不会清空或迁移已保存配置。
+- 运行时边界：JP/KR 指数按 market_review 的 fail-open 约定逐项抓取；单项失败不会阻断其余指数与其他市场；当两个市场均无可用主指数行情时返回本地可见 `None/空`，主流程继续可按其余市场输出或直接降级。
+- 兼容性验证依据：行情/基本面上下文在 `data_provider/base.py` 与 `realtime_types.py` 中按现有 `getattr`/可选字段约定向下游透传，不强制读写新增字段；无配置迁移脚本，未观察到 provider/model/base URL fallback 路径变更。
 - 回退方式：若新增元数据字段在某端产生兼容问题，可先忽略这些字段并按既有市场判定+行情展示链路运行；必要时回滚本次提交或通过移除 `jp/kr` `MarketSymbol` 及路由扩展恢复旧行为。
 
 不承诺项：
@@ -45,10 +49,37 @@
 
 支持范围：
 
-- `jp`：通过 Yahoo Finance 获取日经225 `^N225` 与东证指数 `^TOPX`，输出日股大盘复盘。
-- `kr`：通过 Yahoo Finance 获取 KOSPI `^KS11` 与 KOSDAQ `^KQ11`，输出韩股大盘复盘。
-- Web 设置页可选择 `jp` / `kr`；交易日检查会按 `XTKS / Asia/Tokyo` 与 `XKRX / Asia/Seoul` 过滤 `both` 中当日开市市场。
+- `jp`：通过 Yahoo Finance 获取日经225 `^N225` 与东证指数 `^TOPX`，输出日股大盘复盘。可复核页面：
+  - `^N225`：<https://finance.yahoo.com/quote/%5EN225/>
+  - `^TOPX`：<https://finance.yahoo.com/quote/%5ETOPX/>
+- `kr`：通过 Yahoo Finance 获取 KOSPI `^KS11` 与 KOSDAQ `^KQ11`，输出韩股大盘复盘。可复核页面：
+  - `^KS11`：<https://finance.yahoo.com/quote/%5EKS11/>
+  - `^KQ11`：<https://finance.yahoo.com/quote/%5EKQ11/>
+- Web 设置页通过 `MARKET_REVIEW_REGION` 文本框输入逗号分隔子集（如 `cn,jp`、`cn,us,jp,kr`）；交易日检查会按 `XTKS / Asia/Tokyo` 与 `XKRX / Asia/Seoul` 过滤 `both` 中当日开市市场。
 - 复盘策略、新闻搜索词、Prompt 市场语义和中英文通知标题均按 JP/KR 独立 profile 处理。
+
+说明（兼容性与验收口径）：
+
+- 线上数据可用性来自 Yahoo Finance 指数页面与接口契约，当前实现仅覆盖 `data_provider/yfinance_fetcher.py` 的指数路由与降级行为；不对实时行情连通性作稳定性承诺。
+- 与该条目标相关的本地自动化验证默认使用离线回归：`tests/test_yfinance_jp_kr_indices.py`、`tests/test_yfinance_hk_indices.py`（共性映射/回退）与 `tests/test_trading_calendar.py`（交易日过滤）。如果要补充实时可用性复核，可在联网环境直接访问上述 Yahoo Finance 页面进行一次性抽检。
+
+- 外部兼容性边界（当前实现默认假设）：
+  - 数据源：`yfinance`（版本下限 `requirements.txt` 中的 `yfinance>=0.2.0`）
+  - 长期约束：`^N225`、`^TOPX`、`^KS11`、`^KQ11` 必须在 Yahoo Finance 端有可检索 quote 页面；无法检索视为索引级不可用，由 `market_review` fail-open 机制退化到已有市场输出，不中断主流程。
+- 兼容验证（可复核）：
+  - <https://finance.yahoo.com/quote/%5EN225/>
+  - <https://finance.yahoo.com/quote/%5ETOPX/>
+  - <https://finance.yahoo.com/quote/%5EKS11/>
+  - <https://finance.yahoo.com/quote/%5EKQ11/>
+  - 可复现联机复核命令（选做）：
+```bash
+python - <<'PY'
+from yfinance import Ticker
+for symbol in ("^N225", "^TOPX", "^KS11", "^KQ11"):
+    data = Ticker(symbol).history(period="5d")
+    print(symbol, "rows", len(data))
+PY
+```
 
 边界：
 
@@ -70,6 +101,7 @@ Market Light / 告警：
 
 - Market Light 快照和 Market Light 告警仍只支持 `cn` / `hk` / `us`。
 - Web 告警市场下拉不展示 `jp` / `kr`；后端 `normalize_market_region()` 对 `jp` / `kr` 返回显式 unsupported 错误。
+- Web 告警表单的可验收表现：目标范围切到“大盘市场”后，市场区域只显示 A 股、港股、美股；中英文 UI 选项由 `apps/dsa-web/src/components/alerts/__tests__/AlertRuleForm.test.tsx` 覆盖。
 - JP/KR 大盘复盘 v1 可生成报告和结构化 market review payload，但不等价于完整 Market Light 风控信号。
 - 该轮边界收敛不改动 LLM Provider / Model / Base URL 的持久化语义，也不执行默认模型、运行时配置清理或回写；如需回滚，仅需恢复提交前 `.env` 与相关配置快照，并回退该功能提交。
 

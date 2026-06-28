@@ -93,6 +93,7 @@ const STOP_LOSS_MODE_OPTIONS = [
   { value: 'breach', label: '已触发止损' },
 ];
 
+
 const MARKET_LIGHT_STATUS_OPTIONS: Array<{ value: MarketLightStatus; label: string }> = [
   { value: 'red', label: '红灯' },
   { value: 'yellow', label: '黄灯' },
